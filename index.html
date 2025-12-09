@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>旅行助手 | 行程規劃與記賬</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCkUOdZ5y7hMm0yrcCQoCvLwzdM6M8s5qk&libraries=places&callback=initMap" async defer></script>
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=3.0&ak=您的百度地圖AK&s=1"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* 自定義滾動條樣式 */
@@ -73,8 +73,8 @@
             transform: translateY(-2px);
         }
         
-        /* Google 地圖容器 */
-        #map {
+        /* 地圖容器 */
+        #baidu-map {
             width: 100%;
             height: 100%;
         }
@@ -93,19 +93,6 @@
             cursor: pointer;
         }
         
-        /* 貨幣選擇器樣式 */
-        .currency-flag {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 8px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        
         /* 搜尋輸入框樣式 */
         .search-container {
             position: relative;
@@ -121,6 +108,77 @@
             top: 50%;
             transform: translateY(-50%);
             color: #FF6B9D;
+        }
+        
+        /* 百度地圖控制按鈕 */
+        .map-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 1000;
+        }
+        
+        .map-control-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: white;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #FF6B9D;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+        
+        .map-control-btn:hover {
+            background: #FF6B9D;
+            color: white;
+            transform: scale(1.1);
+        }
+        
+        /* 購物清單項目刪除按鈕 */
+        .delete-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #fee2e2;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #ef4444;
+            font-size: 12px;
+            transition: all 0.2s;
+            margin-left: 8px;
+        }
+        
+        .delete-btn:hover {
+            background: #fecaca;
+            transform: scale(1.1);
+        }
+        
+        /* 加載動畫 */
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #FF6B9D;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -199,7 +257,7 @@
                                     <h3 class="font-bold text-gray-800 text-base">{{ item.title }}</h3>
                                     <div class="flex items-center mt-1">
                                         <p class="text-xs text-pink-500 mr-3">
-                                            <i class="far fa-clock mr-1"></i>{{ item.time }}
+                                            <i class="far fa-clock mr-1"></i>{{ formatTimeForDisplay(item.time) }}
                                         </p>
                                         <p class="text-xs text-purple-500">
                                             <i class="far fa-calendar mr-1"></i>{{ formatDateForDisplay(item.date) }}
@@ -220,6 +278,9 @@
                         <span class="text-xs text-pink-600">
                             <i class="fas fa-map-marker-alt mr-1 text-xs"></i>{{ item.location }}
                         </span>
+                        <button @click="viewLocationOnMap(item.location)" class="text-xs text-blue-500 hover:text-blue-700 ml-auto">
+                            <i class="fas fa-map-marker-alt mr-1"></i>在地圖查看
+                        </button>
                     </div>
                 </div>
                 
@@ -236,16 +297,32 @@
             <section v-if="activeTab === 'map'" class="space-y-4 fade-in">
                 <h2 class="text-lg font-bold text-pink-800 mb-2">地圖</h2>
                 
+                <!-- 地圖容器 -->
                 <div class="rounded-2xl overflow-hidden card-shadow map-container">
-                    <div id="map" class="w-full h-full"></div>
+                    <div id="baidu-map" class="w-full h-full"></div>
+                    <!-- 地圖控制按鈕 -->
+                    <div class="map-controls">
+                        <button @click="zoomIn" class="map-control-btn" title="放大">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <button @click="zoomOut" class="map-control-btn" title="縮小">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <button @click="locateMe" class="map-control-btn" title="我的位置">
+                            <i class="fas fa-location-arrow"></i>
+                        </button>
+                        <button @click="showAllMarkers" class="map-control-btn" title="顯示所有標記">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- 搜尋功能 -->
-                <div class="search-container">
+                <div class="search-container mt-4">
                     <i class="fas fa-search search-icon"></i>
                     <input 
                         v-model="searchQuery" 
-                        @keyup.enter="searchLocation" 
+                        @keyup.enter="searchBaiduLocation" 
                         type="text" 
                         placeholder="搜尋地點 (如: 台北101、鼎泰豐)" 
                         class="w-full p-3 pl-10 border border-pink-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent search-input"
@@ -253,7 +330,7 @@
                 </div>
                 
                 <div class="grid grid-cols-2 gap-3 mt-4">
-                    <button @click="searchLocation" class="p-4 rounded-xl text-center card-shadow btn-hover bg-white hover:bg-pink-50 transition">
+                    <button @click="searchBaiduLocation" class="p-4 rounded-xl text-center card-shadow btn-hover bg-white hover:bg-pink-50 transition">
                         <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-pink-100 flex items-center justify-center mx-auto mb-2">
                             <i class="fas fa-search" style="color: #FF6B9D"></i>
                         </div>
@@ -270,11 +347,14 @@
                 <div class="rounded-2xl p-4 mt-4 card-shadow bg-white">
                     <h3 class="font-bold text-gray-800 mb-3 text-sm">最近搜尋</h3>
                     <div class="space-y-3">
-                        <div v-for="location in recentLocations" :key="location" class="flex items-center text-sm text-gray-700 p-2 rounded-lg hover:bg-pink-50 transition cursor-pointer" @click="searchRecentLocation(location)">
+                        <div v-for="(location, index) in recentLocations" :key="index" class="flex items-center text-sm text-gray-700 p-2 rounded-lg hover:bg-pink-50 transition cursor-pointer" @click="searchRecentLocation(location)">
                             <div class="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center mr-3">
                                 <i class="fas fa-map-pin text-xs" style="color: #FF6B9D"></i>
                             </div>
-                            <span>{{ location }}</span>
+                            <span class="flex-1">{{ location }}</span>
+                            <button @click.stop="removeRecentLocation(index)" class="text-gray-400 hover:text-red-400">
+                                <i class="fas fa-times text-xs"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -307,7 +387,7 @@
                     <div class="flex justify-between items-center mb-4">
                         <div>
                             <p class="text-xs text-pink-600">總支出</p>
-                            <p class="text-2xl font-bold text-gray-800">{{ currencySymbol }}{{ totalExpenses }}</p>
+                            <p class="text-2xl font-bold text-gray-800">{{ currencySymbol }}{{ totalExpenses.toLocaleString() }}</p>
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-pink-600">項目數</p>
@@ -321,7 +401,7 @@
                                 <div class="w-3 h-3 rounded-full mr-2 shadow-sm" :style="{backgroundColor: category.color}"></div>
                                 <span class="text-gray-700">{{ category.name }}</span>
                             </div>
-                            <span class="font-bold" :style="{color: category.color}">{{ currencySymbol }}{{ category.amount }}</span>
+                            <span class="font-bold" :style="{color: category.color}">{{ currencySymbol }}{{ category.amount.toLocaleString() }}</span>
                         </div>
                     </div>
                 </div>
@@ -334,10 +414,10 @@
                             <h4 class="font-bold text-gray-800 text-sm">{{ item.title }}</h4>
                             <p class="text-xs text-pink-500">{{ formatDateForDisplay(item.date) }} • {{ item.category }}</p>
                         </div>
-                        <div class="text-right">
-                            <p class="font-bold text-gray-800 text-lg">{{ currencySymbol }}{{ item.amount }}</p>
-                            <button @click="removeExpense(item.id)" class="text-xs text-gray-400 hover:text-red-400 transition">
-                                <i class="fas fa-trash-alt text-xs"></i>
+                        <div class="text-right flex items-center">
+                            <p class="font-bold text-gray-800 text-lg mr-2">{{ currencySymbol }}{{ item.amount.toLocaleString() }}</p>
+                            <button @click="removeExpense(item.id)" class="delete-btn">
+                                <i class="fas fa-trash-alt"></i>
                             </button>
                         </div>
                     </div>
@@ -398,11 +478,14 @@
                                         {{ item.category }} • {{ item.store || '未指定商店' }}
                                     </p>
                                     <p class="text-xs font-bold text-gray-700">
-                                        {{ currencySymbol }}{{ item.price || '--' }}
+                                        {{ currencySymbol }}{{ item.price ? item.price.toLocaleString() : '--' }}
                                     </p>
                                 </div>
                             </div>
                         </div>
+                        <button @click="removeShoppingItem(item.id)" class="delete-btn">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
                     </div>
                 </div>
                 
@@ -476,6 +559,21 @@
                             ></button>
                         </div>
                     </div>
+                    
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">地圖設定</h4>
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm text-gray-700">使用百度地圖</span>
+                                <div class="relative inline-block w-12 h-6">
+                                    <input type="checkbox" class="sr-only" checked disabled>
+                                    <div class="block bg-pink-500 w-12 h-6 rounded-full"></div>
+                                    <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition"></div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-500">如需更換API金鑰，請修改HTML中的AK參數</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -527,7 +625,7 @@
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">地點</label>
-                            <input v-model="newItinerary.location" type="text" class="w-full p-3 border border-pink-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent">
+                            <input v-model="newItinerary.location" type="text" class="w-full p-3 border border-pink-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent" placeholder="輸入地點名稱">
                         </div>
                     </div>
                 </div>
@@ -755,17 +853,17 @@
                     },
                     
                     // 地圖相關
-                    map: null,
+                    baiduMap: null,
                     searchQuery: '',
                     recentLocations: ['台北101觀景台', '鼎泰豐信義店', '桃園機場', '故宮博物院'],
                     showRoutePanel: false,
                     routeStart: '',
                     routeEnd: '',
-                    routeMode: 'DRIVING',
+                    routeMode: 'driving',
                     travelModes: [
-                        { value: 'DRIVING', name: '開車', icon: 'fas fa-car' },
-                        { value: 'WALKING', name: '步行', icon: 'fas fa-walking' },
-                        { value: 'TRANSIT', name: '大眾運輸', icon: 'fas fa-bus' }
+                        { value: 'driving', name: '開車', icon: 'fas fa-car' },
+                        { value: 'walking', name: '步行', icon: 'fas fa-walking' },
+                        { value: 'transit', name: '大眾運輸', icon: 'fas fa-bus' }
                     ],
                     
                     // 貨幣相關
@@ -913,69 +1011,161 @@
                 },
                 
                 // 地圖方法
-                initMap() {
-                    // 初始化地圖，以台北為中心
-                    const mapElement = document.getElementById('map');
-                    if (mapElement) {
-                        this.map = new google.maps.Map(mapElement, {
-                            center: { lat: 25.0330, lng: 121.5654 }, // 台北101座標
-                            zoom: 15,
-                            styles: [
-                                {
-                                    featureType: "poi",
-                                    elementType: "labels",
-                                    stylers: [{ visibility: "off" }]
-                                }
-                            ]
-                        });
-                        
-                        // 添加標記
-                        const marker = new google.maps.Marker({
-                            position: { lat: 25.0330, lng: 121.5654 },
-                            map: this.map,
-                            title: '台北101',
-                            icon: {
-                                url: 'https://maps.google.com/mapfiles/ms/icons/pink-dot.png'
-                            }
-                        });
-                    }
+                initBaiduMap() {
+                    // 初始化百度地圖，以台北為中心
+                    this.baiduMap = new BMap.Map("baidu-map");
+                    const point = new BMap.Point(121.5654, 25.0330); // 台北101座標
+                    this.baiduMap.centerAndZoom(point, 15);
+                    
+                    // 添加控件
+                    this.baiduMap.addControl(new BMap.NavigationControl());
+                    this.baiduMap.addControl(new BMap.ScaleControl());
+                    this.baiduMap.addControl(new BMap.OverviewMapControl());
+                    
+                    // 添加標記
+                    const marker = new BMap.Marker(point);
+                    this.baiduMap.addOverlay(marker);
+                    
+                    // 添加信息窗口
+                    const infoWindow = new BMap.InfoWindow("台北101觀景台");
+                    marker.addEventListener("click", () => {
+                        this.baiduMap.openInfoWindow(infoWindow, point);
+                    });
                 },
                 
-                searchLocation() {
+                searchBaiduLocation() {
                     if (!this.searchQuery.trim()) return;
                     
-                    // 模擬搜尋結果
-                    const geocoder = new google.maps.Geocoder();
-                    geocoder.geocode({ address: this.searchQuery }, (results, status) => {
-                        if (status === 'OK' && results[0]) {
-                            this.map.setCenter(results[0].geometry.location);
-                            new google.maps.Marker({
-                                map: this.map,
-                                position: results[0].geometry.location,
-                                title: this.searchQuery,
-                                icon: {
-                                    url: 'https://maps.google.com/mapfiles/ms/icons/pink-dot.png'
+                    // 使用百度地圖搜尋
+                    const local = new BMap.LocalSearch(this.baiduMap, {
+                        onSearchComplete: (results) => {
+                            if (local.getStatus() === BMAP_STATUS_SUCCESS) {
+                                const firstResult = results.getPoi(0);
+                                if (firstResult) {
+                                    const point = firstResult.point;
+                                    this.baiduMap.centerAndZoom(point, 16);
+                                    
+                                    // 清除舊標記
+                                    this.baiduMap.clearOverlays();
+                                    
+                                    // 添加新標記
+                                    const marker = new BMap.Marker(point);
+                                    this.baiduMap.addOverlay(marker);
+                                    
+                                    // 添加到最近搜尋
+                                    if (!this.recentLocations.includes(this.searchQuery)) {
+                                        this.recentLocations.unshift(this.searchQuery);
+                                        if (this.recentLocations.length > 5) {
+                                            this.recentLocations.pop();
+                                        }
+                                    }
+                                    
+                                    this.searchQuery = '';
                                 }
-                            });
-                            
-                            // 添加到最近搜尋
-                            if (!this.recentLocations.includes(this.searchQuery)) {
-                                this.recentLocations.unshift(this.searchQuery);
-                                if (this.recentLocations.length > 5) {
-                                    this.recentLocations.pop();
-                                }
+                            } else {
+                                alert('找不到這個地點: ' + this.searchQuery);
                             }
-                            
-                            this.searchQuery = '';
-                        } else {
-                            alert('找不到這個地點: ' + this.searchQuery);
                         }
                     });
+                    
+                    local.search(this.searchQuery);
                 },
                 
                 searchRecentLocation(location) {
                     this.searchQuery = location;
-                    this.searchLocation();
+                    this.searchBaiduLocation();
+                },
+                
+                removeRecentLocation(index) {
+                    this.recentLocations.splice(index, 1);
+                },
+                
+                viewLocationOnMap(locationName) {
+                    this.searchQuery = locationName;
+                    this.activeTab = 'map';
+                    // 等待地圖切換後搜尋
+                    setTimeout(() => {
+                        this.searchBaiduLocation();
+                    }, 300);
+                },
+                
+                // 地圖控制方法
+                zoomIn() {
+                    if (this.baiduMap) {
+                        this.baiduMap.zoomIn();
+                    }
+                },
+                
+                zoomOut() {
+                    if (this.baiduMap) {
+                        this.baiduMap.zoomOut();
+                    }
+                },
+                
+                locateMe() {
+                    if (navigator.geolocation && this.baiduMap) {
+                        navigator.geolocation.getCurrentPosition((position) => {
+                            const point = new BMap.Point(
+                                position.coords.longitude, 
+                                position.coords.latitude
+                            );
+                            this.baiduMap.centerAndZoom(point, 16);
+                            
+                            // 清除舊標記
+                            this.baiduMap.clearOverlays();
+                            
+                            // 添加我的位置標記
+                            const marker = new BMap.Marker(point);
+                            this.baiduMap.addOverlay(marker);
+                            
+                            // 添加信息窗口
+                            const infoWindow = new BMap.InfoWindow("我的位置");
+                            marker.addEventListener("click", () => {
+                                this.baiduMap.openInfoWindow(infoWindow, point);
+                            });
+                        }, (error) => {
+                            alert('無法獲取您的位置: ' + error.message);
+                        });
+                    } else {
+                        alert('您的瀏覽器不支持地理位置功能');
+                    }
+                },
+                
+                showAllMarkers() {
+                    // 顯示所有行程地點
+                    this.activeTab = 'map';
+                    setTimeout(() => {
+                        if (this.baiduMap && this.itinerary.length > 0) {
+                            this.baiduMap.clearOverlays();
+                            
+                            const bounds = new BMap.Bounds();
+                            this.itinerary.forEach((item, index) => {
+                                // 模擬地點座標（實際應用中應該使用地理編碼）
+                                const lat = 25.0330 + (Math.random() * 0.1 - 0.05);
+                                const lng = 121.5654 + (Math.random() * 0.1 - 0.05);
+                                const point = new BMap.Point(lng, lat);
+                                
+                                // 創建標記
+                                const marker = new BMap.Marker(point);
+                                this.baiduMap.addOverlay(marker);
+                                
+                                // 添加信息窗口
+                                const infoWindow = new BMap.InfoWindow(
+                                    `<strong>${item.title}</strong><br>${item.location}<br>${item.time}`
+                                );
+                                marker.addEventListener("click", () => {
+                                    this.baiduMap.openInfoWindow(infoWindow, point);
+                                });
+                                
+                                bounds.extend(point);
+                            });
+                            
+                            // 調整視圖以顯示所有標記
+                            if (this.itinerary.length > 1) {
+                                this.baiduMap.setViewport(bounds.getBounds());
+                            }
+                        }
+                    }, 300);
                 },
                 
                 planRoute() {
@@ -984,8 +1174,6 @@
                         return;
                     }
                     
-                    // 這裡應該使用Google Directions API，但需要付費API金鑰
-                    // 這裡僅顯示訊息
                     alert(`已規劃從 ${this.routeStart} 到 ${this.routeEnd} 的路線\n交通方式: ${this.travelModes.find(m => m.value === this.routeMode).name}`);
                     this.showRoutePanel = false;
                     this.routeStart = '';
@@ -1060,14 +1248,14 @@
             mounted() {
                 this.updateExpenseCategories();
                 
-                // 初始化地圖
-                if (window.google && window.google.maps) {
-                    this.initMap();
-                } else {
-                    window.initMap = () => {
-                        this.initMap();
-                    };
-                }
+                // 初始化百度地圖
+                setTimeout(() => {
+                    if (typeof BMap !== 'undefined') {
+                        this.initBaiduMap();
+                    } else {
+                        console.log('百度地圖加載失敗，請檢查API金鑰');
+                    }
+                }, 500);
                 
                 // 設定預設時間格式
                 this.newItinerary.time = '09:00';
